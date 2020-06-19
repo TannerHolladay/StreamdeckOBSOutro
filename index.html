@@ -1,0 +1,350 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<title>com.drakus.outro</title>
+	<meta charset="utf-8" />
+	<link rel="stylesheet" href="disco.css">
+	<script type='text/javascript' src='./obs-websocket-js/dist/obs-websocket.js'></script>
+</head>
+
+<body>
+	<script>
+		const obs = new OBSWebSocket();
+
+		obs.connect({
+			address: "localhost:4444"
+		}).then(() => {
+			console.log('connected');
+		}).catch((error) => {
+			console.error(error);
+		});
+
+		var websocket = null;
+		var pluginUUID = null;
+		var settingsCache = {};
+		var testing = false;
+
+		var DestinationEnum = Object.freeze({
+			"HARDWARE_AND_SOFTWARE": 0,
+			"HARDWARE_ONLY": 1,
+			"SOFTWARE_ONLY": 2
+		})
+
+		var timer, timerDisp, playing;
+
+		var outroAction = {
+
+			type: "com.elgato.outro.action",
+
+			onKeyDown: function (context, settings, coordinates, userDesiredState) {
+				obs.connect({
+					address: "localhost:4444"
+				}).then(() => {
+					console.log('connected');
+				}).catch((error) => {
+					console.error(error);
+				});
+			},
+
+			onKeyUp: function (context, settings, coordinates, userDesiredState) {
+				
+				outroAction.ClearImage(context);
+
+				var delay = settings.delay;
+				var count = Math.floor(delay);
+
+				outroAction.SetTitle(context, count);
+
+
+				if (timer || timerDisp || !playing.paused) {
+					clearInterval(timer);
+					clearInterval(timerDisp);
+
+					if (playing) {
+						playing.pause();
+						playing.currentTime = 0;
+					}
+
+					timer = undefined;
+					timerDisp = undefined;
+					return;
+				}
+
+				if (testing) {
+					playing.currentTime = delay - 5;
+					delay = 5;
+					count = Math.floor(delay);
+				}
+
+				outroAction.SetTitle(context, count);
+
+				if (playing) {
+					playing.volume = settings.volume / 100;
+					playing.play();
+				} else {
+					console.log('No song defined')
+				}
+
+				timer = setTimeout(function () {
+					clearInterval(timerDisp);
+					timer = undefined;
+					timerDisp = undefined;
+					outroAction.SetTitle(context, "");
+
+					obs.send('SetCurrentScene', {
+						'scene-name': 'Ending'
+					});
+
+					count = 0;
+
+					timerDisp = setInterval(function () {
+						count++;
+						var json = {
+							"event": "setImage",
+							"context": context,
+							"payload": {
+								image: `data:image/svg+xml;charset=utf8,<svg height=\"100\" width=\"100\"><rect width=\"100\" height=\"100\" fill="${HSLToHex(Math.abs(Math.sin(count * 3)) * 360, 100, 50)}" /></svg>`,
+								target: DestinationEnum.HARDWARE_AND_SOFTWARE
+							}
+						};
+						websocket.send(JSON.stringify(json));
+					}, 100);
+
+
+					if (playing) {
+						playing.onended = function() {
+							clearInterval(timerDisp);
+							timerDisp = undefined;
+							outroAction.ClearImage(context);
+							outroAction.SetTitle(context, Math.floor(settings.delay));
+							if (settings.stopStreaming) {
+								obs.send('StopStreaming');
+							}
+						}
+					} else {
+						setTimeout(function () {
+							outroAction.ClearImage(context);
+							outroAction.SetTitle(context, Math.floor(settings.delay));
+						}, 3000);
+					}
+				}, delay * 1000)
+
+				timerDisp = setInterval(function () {
+					count--;
+					outroAction.SetTitle(context, count);
+				}, 1000);
+			},
+
+			onWillAppear: function (context, settings, coordinates) {
+				outroAction.ClearImage(context);
+				var delay = 5;
+				var song;
+				var volume = .5;
+				if (settings != null && settings.hasOwnProperty('delay')) {
+					delay = settings["delay"];
+					song = settings["song"];
+					volume = settings["volume"];
+				}
+
+				updatedSettings = {};
+				updatedSettings["delay"] = delay;
+				updatedSettings["song"] = song;
+				updatedSettings["volume"] = volume;
+				settingsCache = settings;
+				settingsCache[context] = updatedSettings;
+
+				if (playing) playing.pause();
+				playing = new Audio(settings.song);
+				playing.preload = "auto";
+
+				this.SetSettings(context, updatedSettings);
+
+				this.SetTitle(context, Math.floor(delay));
+			},
+
+			SetTitle: function (context, newTitle) {
+				var json = {
+					"event": "setTitle",
+					"context": context,
+					"payload": {
+						"title": "" + newTitle,
+						"target": DestinationEnum.HARDWARE_AND_SOFTWARE
+					}
+				};
+
+				websocket.send(JSON.stringify(json));
+			},
+
+			ClearImage: function (context) {
+				var json = {
+					"event": "setImage",
+					"context": context,
+					"payload": {
+						image: "",
+						target: DestinationEnum.HARDWARE_AND_SOFTWARE
+					}
+				};
+
+				websocket.send(JSON.stringify(json));
+			},
+
+			SetSettings: function (context, settings) {
+				settingsCache = settings;
+
+				var json = {
+					"event": "setSettings",
+					"context": context,
+					"payload": settings
+				};
+
+				websocket.send(JSON.stringify(json));
+			},
+
+			AddToSettings: function (context, newSettings) {
+				settingsCache[context]
+			}
+		};
+
+		function connectElgatoStreamDeckSocket(inPort, inPluginUUID, inRegisterEvent, inInfo) {
+			pluginUUID = inPluginUUID
+
+			// Open the web socket
+			websocket = new WebSocket("ws://127.0.0.1:" + inPort);
+
+			function registerPlugin(inPluginUUID) {
+				var json = {
+					"event": inRegisterEvent,
+					"uuid": inPluginUUID
+				};
+
+				websocket.send(JSON.stringify(json));
+			};
+
+			websocket.onopen = function () {
+				// WebSocket is connected, send message
+				registerPlugin(pluginUUID);
+			};
+
+			websocket.onmessage = function (evt) {
+
+				// Received message from Stream Deck
+				var jsonObj = JSON.parse(evt.data);
+				var event = jsonObj['event'];
+				var action = jsonObj['action'];
+				var context = jsonObj['context'];
+				var jsonPayload = jsonObj['payload'] || {};
+
+				if (event == "keyDown") {
+					var settings = jsonPayload['settings'];
+					var coordinates = jsonPayload['coordinates'];
+					var userDesiredState = jsonPayload['userDesiredState'];
+					outroAction.onKeyDown(context, settings, coordinates, userDesiredState);
+				} else if (event == "keyUp") {
+					var settings = jsonPayload['settings'];
+					var coordinates = jsonPayload['coordinates'];
+					var userDesiredState = jsonPayload['userDesiredState'];
+					outroAction.onKeyUp(context, settings, coordinates, userDesiredState);
+				} else if (event == "willAppear") {
+					var settings = jsonPayload['settings'];
+					var coordinates = jsonPayload['coordinates'];
+					outroAction.onWillAppear(context, settings, coordinates);
+				} else if (event == "sendToPlugin") {
+
+					if (jsonPayload.hasOwnProperty('setVolume')) {
+
+						var newVolume = jsonPayload.setVolume;
+						settingsCache["volume"] = newVolume;
+						if (playing) playing.volume = newVolume / 100;
+					}
+
+					if (jsonPayload.hasOwnProperty('setDelay')) {
+
+						var newDelay = jsonPayload.setDelay;
+						settingsCache["delay"] = newDelay;
+						outroAction.SetTitle(context, Math.floor(newDelay));
+					}
+
+					if (jsonPayload.hasOwnProperty('setSong')) {
+						var newSong = jsonPayload.setSong;
+						settingsCache["song"] = newSong;
+						if (playing) playing.pause();
+						playing = new Audio(newSong);
+						playing.preload = "auto";
+					}
+
+					if (jsonPayload.hasOwnProperty('isTesting')) {
+						testing = jsonPayload.isTesting;
+					}
+
+					if (jsonPayload.hasOwnProperty('stopStreaming')) {
+						settingsCache["stopStreaming"] = jsonPayload.stopStreaming;
+					}
+
+					outroAction.SetSettings(context, settingsCache);
+				} else if (event == "propertyInspectorDidAppear" || event == "propertyInspectorDidDisappear") {
+					testing = false;
+				}
+			};
+
+			websocket.onclose = function () {
+				// Websocket is closed
+			};
+		};
+
+		function HSLToHex(h, s, l) {
+			s /= 100;
+			l /= 100;
+
+			let c = (1 - Math.abs(2 * l - 1)) * s,
+				x = c * (1 - Math.abs((h / 60) % 2 - 1)),
+				m = l - c / 2,
+				r = 0,
+				g = 0,
+				b = 0;
+
+			if (0 <= h && h < 60) {
+				r = c;
+				g = x;
+				b = 0;
+			} else if (60 <= h && h < 120) {
+				r = x;
+				g = c;
+				b = 0;
+			} else if (120 <= h && h < 180) {
+				r = 0;
+				g = c;
+				b = x;
+			} else if (180 <= h && h < 240) {
+				r = 0;
+				g = x;
+				b = c;
+			} else if (240 <= h && h < 300) {
+				r = x;
+				g = 0;
+				b = c;
+			} else if (300 <= h && h < 360) {
+				r = c;
+				g = 0;
+				b = x;
+			}
+			// Having obtained RGB, convert channels to hex
+			r = Math.round((r + m) * 255).toString(16);
+			g = Math.round((g + m) * 255).toString(16);
+			b = Math.round((b + m) * 255).toString(16);
+
+			// Prepend 0s, if necessary
+			if (r.length == 1)
+				r = "0" + r;
+			if (g.length == 1)
+				g = "0" + g;
+			if (b.length == 1)
+				b = "0" + b;
+
+			return "#" + r + g + b;
+		};
+	</script>
+
+</body>
+
+</html>

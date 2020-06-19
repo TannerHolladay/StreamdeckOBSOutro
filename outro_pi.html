@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>com.drakus.outro PI</title>
+    <link rel="stylesheet" href="sdpi.css">
+    <script src="common.js"></script>
+</head>
+
+<body>
+    <div class="sdpi-wrapper">
+        <div class="sdpi-item">
+            <div class="sdpi-item-label">Volume</div>
+            <input type="range" class="sdpi-item-value volumeSelect" value=.5 max=100 min=0 oninput="sendValueToPlugin(Number(event.target.value), 'setVolume')"/>
+        </div>
+        <div class="sdpi-item">
+            <div class="sdpi-item-label">Delay(Sec)</div>
+            <input type="number" class="sdpi-item-value delaySelect" value=1000 onkeyup="sendValueToPlugin(Number(event.target.value), 'setDelay')"/>
+        </div>
+        <div class="sdpi-item" id="my_private_file_selector">
+            <div class="sdpi-item-label">Select File</div>
+            <div class="sdpi-item-group file" id="filepickergroup">
+                <input class="sdpi-item-value" id="myfile" type="file" accept=".mp3, .wav" onchange="sendValueToPlugin(event.target.value, 'setSong')">
+                <label class="sdpi-file-info">no file...</label>
+                <label class="sdpi-file-label" onclick="document.getElementById('myfile').click()">Choose file...</label>
+            </div>
+        </div>
+        <div type="checkbox" class="sdpi-item">
+            <div class="sdpi-item-label">Stop Stream When Finished</div>
+            <input class="sdpi-item-value" id="stopstream" type="checkbox" value="left" onchange="sendValueToPlugin(event.target.checked, 'stopStreaming')">
+            <label for="stopstream"><span></span></label>
+        </div>
+        <div type="checkbox" class="sdpi-item">
+            <div class="sdpi-item-label">Testing Mode</div>
+            <input class="sdpi-item-value" id="chk0" type="checkbox" value="left" onchange="sendValueToPlugin(event.target.checked, 'isTesting')">
+            <label for="chk0"><span></span></label>
+        </div>
+    </div>
+
+    <script>
+        var pluginAction = null,
+            uuid = '',
+            oDelaySelector = document.querySelector(".delaySelect"),
+            oVolumeSelector = document.querySelector(".volumeSelect"),
+            oStopStreamSelector = document.querySelector("#stopstream"),
+            oSongSelector = document.querySelector('.sdpi-file-info');
+
+        if ($SD) {
+            $SD.on('connected', function (jsonObj) {
+                uuid = jsonObj['uuid'];
+                if (jsonObj.hasOwnProperty('actionInfo')) {
+                    pluginAction = jsonObj.actionInfo['action'];
+                    var payload = jsonObj.actionInfo.payload;
+                    if (payload.settings.hasOwnProperty('delay')) {
+                        oDelaySelector.value = payload.settings.delay;
+                    }
+                    if (payload.settings.hasOwnProperty('song')) {
+                        oSongSelector.textContent = payload.settings.song;
+                    }
+                    if (payload.settings.hasOwnProperty('volume')) {
+                        oVolumeSelector.value = payload.settings.volume;
+                    }
+                    if (payload.settings.hasOwnProperty('stopStreaming')) {
+                        oStopStreamSelector.checked = payload.settings.stopStreaming;
+                    }
+                }
+            });
+        };
+
+        /** you can also use ES6 syntax like so:
+        *
+        *   if ($SD) $SD.on('connected', (jsonObj) => { uuid=jsonObj.uuid }));
+        *    
+        */
+
+        function sendValueToPlugin(value, param) {
+            if ($SD && $SD.connection) {
+                var payload = {};
+                if (param == 'setSong') {
+                    value = decodeURIComponent(value.replace(/^C:\\fakepath\\/, ''));
+                    oSongSelector.textContent = value;
+                }
+                if (param) {
+                    payload[param] = value;
+                }
+                $SD.api.sendToPlugin(uuid, pluginAction, payload);
+
+            }
+        }
+
+    </script>
+
+</body>
+
+</html>

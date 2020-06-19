@@ -1,0 +1,41 @@
+{
+  "Actions": [
+    {
+      "Icon": "TimerSong",
+      "Name": "Stream Outro",
+      "States": [
+        {
+          "Image": "actionIcon",
+          "TitleAlignment": "middle",
+          "FontSize": "16"
+        }
+      ],
+      "SupportedInMultiActions": false,
+      "Tooltip": "Change obs scene at the beat of a song",
+      "UUID": "com.drakus.outro.action"
+    }
+  ],
+  "SDKVersion": 2,
+  "Author": "Elgato",
+  "CodePath": "index.html",
+  "Description": "Lets you change obs scene at the beat of a song",
+  "Name": "Stream Outro",
+  "Icon": "TimerSong",
+  "URL": "https://www.elgato.com/gaming/stream-deck",
+  "PropertyInspectorPath": "outro_pi.html",
+  "Version": "1.4",
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "10.11"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Software": 
+    {
+        "MinimumVersion" : "4.1"
+    }
+}
